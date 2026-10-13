@@ -104,19 +104,69 @@ def get_plans(message):
     else:
         bot.send_message(ADMIN_ID, "❌ Error: Message was not forwarded. Use /add to try again.")
 
+
 def finalize_channel(message, ch_id, ch_name):
     try:
-        raw_plans = message.text.split(',')
+        if not message.text:
+            raise ValueError("Please enter plans as text.")
+
+        raw_plans = message.text.strip().strip("'\"")
         plans_dict = {}
-        for p in raw_plans:
-            t, pr = p.strip().split(':')
-            plans_dict[t] = pr
-        
-        channels_col.update_one({"channel_id": ch_id}, {"$set": {"name": ch_name, "plans": plans_dict, "admin_id": ADMIN_ID}}, upsert=True)
+
+        for p in raw_plans.split(","):
+            parts = p.strip().split(":")
+
+            if len(parts) != 2:
+                raise ValueError(f"Invalid plan: {p}")
+
+            t = parts[0].strip()
+            pr = parts[1].strip()
+
+            if not t.isdigit() or int(t) <= 0:
+                raise ValueError(f"Invalid duration: {t}")
+
+            price = float(pr)
+            if price <= 0:
+                raise ValueError(f"Invalid price: {pr}")
+
+            plans_dict[t] = (
+                int(price) if price.is_integer() else price
+            )
+
+        channels_col.update_one(
+            {"channel_id": ch_id},
+            {
+                "$set": {
+                    "name": ch_name,
+                    "plans": plans_dict,
+                    "admin_id": ADMIN_ID
+                }
+            },
+            upsert=True
+        )
+
         bot_username = bot.get_me().username
-        bot.send_message(ADMIN_ID, f"✅ Setup Successful!\n\nInvite Link for users:\n`https://t.me/{bot_username}?start={ch_id}`", parse_mode="Markdown")
-    except:
-        bot.send_message(ADMIN_ID, "❌ Invalid format. Please use `Min:Price, Min:Price`. Use /add to retry.")
+        invite_link = (
+            f"https://t.me/{bot_username}?start={ch_id}"
+        )
+
+        bot.send_message(
+            ADMIN_ID,
+            f"Setup Successful!\n\n"
+            f"Channel: {ch_name}\n"
+            f"Plans saved: {len(plans_dict)}\n"
+            f"Invite Link:\n{invite_link}"
+        )
+
+    except Exception as e:
+        print(f"finalize_channel error: {e}")
+        bot.send_message(
+            ADMIN_ID,
+            f"Invalid format or database error:\n{str(e)[:300]}\n\n"
+            "Example:\n"
+            "43200:599, 86400:1199, 129600:1500"
+        )
+
 
 # --- USER: PAYMENT FLOW ---
 
